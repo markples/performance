@@ -917,11 +917,15 @@ struct SizeSlot
     }
     public static void BuildSOHBucketSpecsFromSizeDistribution(List<BucketSpec> bucketSpecs, uint survInterval, uint reqSurvInterval, uint pinInterval, uint finalizableInterval)
     {
-        BuildBucketSpecsFromSizeDistribution(bucketSpecs, sohLohSizeSlots, new SizeRange(48, 84_999), survInterval, reqSurvInterval, pinInterval, finalizableInterval, false);
+        BuildBucketSpecsFromSizeDistribution(bucketSpecs, sohLohSizeSlots,
+            new SizeRange(48, MemoryAlloc.LohThreshold - 1),
+            survInterval, reqSurvInterval, pinInterval, finalizableInterval, isPoh: false);
     }
     public static void BuildLOHBucketSpecsFromSizeDistribution(List<BucketSpec> bucketSpecs, uint survInterval, uint reqSurvInterval, uint pinInterval, uint finalizableInterval)
     {
-        BuildBucketSpecsFromSizeDistribution(bucketSpecs, sohLohSizeSlots, new SizeRange(85_000, uint.MaxValue), survInterval, reqSurvInterval, pinInterval, finalizableInterval, false);
+        BuildBucketSpecsFromSizeDistribution(bucketSpecs, sohLohSizeSlots,
+            new SizeRange(MemoryAlloc.LohThreshold, uint.MaxValue),
+            survInterval, reqSurvInterval, pinInterval, finalizableInterval, false);
     }
 
     // an object size distribution for OH derived from a real server scenario
@@ -1237,14 +1241,12 @@ ref struct TextReader
 
 class Args
 {
-    public readonly uint threadCount;
     public readonly PerThreadArgs perThreadArgs;
     public readonly bool finishWithFullCollect;
     public readonly bool endException;
 
-    public Args(uint threadCount, in PerThreadArgs perThreadArgs, bool finishWithFullCollect, bool endException)
+    public Args(in PerThreadArgs perThreadArgs, bool finishWithFullCollect, bool endException)
     {
-        this.threadCount = threadCount;
         this.perThreadArgs = perThreadArgs;
         this.finishWithFullCollect = finishWithFullCollect;
         this.endException = endException;
@@ -1252,7 +1254,6 @@ class Args
 
     public void Describe()
     {
-        Console.WriteLine($"Running {threadCount} threads.");
         for (uint i = 0; i < perThreadArgs.phases.Length; i++)
             perThreadArgs.phases[i].Describe();
     }
@@ -1338,7 +1339,6 @@ class ArgsParser
             if (s == State.Eof)
             {
                 return new Args(
-                    threadCount: threadCount,
                     perThreadArgs: new PerThreadArgs(
                         verifyLiveSize: verifyLiveSize,
                         printEveryNthIter: printEveryNthIter,
@@ -1919,7 +1919,6 @@ class ArgsParser
             threadCount: threadCount,
             compute: compute);
         return new Args(
-            threadCount: threadCount,
             perThreadArgs: new PerThreadArgs(verifyLiveSize: verifyLiveSize, printEveryNthIter: printEveryNthIter, phases: new Phase[] { onlyPhase }),
             finishWithFullCollect: finishWithFullCollect,
             endException: endException);
@@ -1999,7 +1998,7 @@ class Bucket
             sohAllocatedBytes += overhead;
             pohAllocatedBytes += (size - overhead);
         }
-        else if (size >= 85000)
+        else if (size >= MemoryAlloc.LohThreshold)
         {
             sohAllocatedBytes += overhead;
             lohAllocatedBytes += (size - overhead);
@@ -2185,7 +2184,7 @@ struct TestResult
 
 class MemoryAlloc
 {
-    public static int LohThreshold = 85000;
+    public static uint LohThreshold = 85_000;
 
     private readonly Rand rand;
     OldArr oldArr;
@@ -2649,6 +2648,7 @@ class MemoryAlloc
             // launch threads separately for each phase, so we can vary the number of threads in each phase
             Phase phase = phases[phaseIndex];
             PerThreadArgs perThreadArgs = new PerThreadArgs(args.perThreadArgs.verifyLiveSize, args.perThreadArgs.printEveryNthIter, new Phase[] { phase });
+            Console.WriteLine($"Running {phase.threadCount} threads.");
 
             if (phase.threadCount > 1)
             {
