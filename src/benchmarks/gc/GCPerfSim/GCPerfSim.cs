@@ -1594,7 +1594,6 @@ class ArgsParser
     private const uint DEFAULT_POH_ALLOC_HIGH = 200 * 1024;
 
 #if NET5_0_OR_GREATER
-    private const uint DEFAULT_POH_PINNING_INTERVAL = 0;
     private const uint DEFAULT_POH_FINALIZABLE_INTERVAL = 0;
     private const uint DEFAULT_POH_SURV_INTERVAL = 0;
     private const uint DEFAULT_REQ_POH_SURV_INTERVAL = 0;
