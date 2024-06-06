@@ -138,7 +138,7 @@ namespace GC.Infrastructure.Commands.GCPerfSim
                         }
 
                         // Add overrides.
-                        if (runInfo.RunDetails.Value.environment_variables != null)
+                        if (runInfo.RunDetails.Value?.environment_variables != null)
                         {
                             foreach (var environmentVar in runInfo.RunDetails.Value.environment_variables)
                             {
@@ -157,6 +157,15 @@ namespace GC.Infrastructure.Commands.GCPerfSim
 
                         foreach (var environVar in environmentVariables)
                         {
+                            // Check if the log file is specified, also store it in a run-specific location.
+                            // This log file should be named in concordance with the name of the run and the benchmark.
+                            if (string.CompareOrdinal(environVar.Key, "DOTNET_GCLogFile") == 0)
+                            {
+                                string gcLogDirectory = Path.Combine(outputPath, runInfo.RunDetails.Key + "_GCLog");
+                                Core.Utilities.TryCreateDirectory(gcLogDirectory);
+                                gcperfsimProcess.StartInfo.WorkingDirectory = gcLogDirectory;
+                            }
+
                             gcperfsimProcess.StartInfo.EnvironmentVariables[environVar.Key] = environVar.Value;
                         }
 
