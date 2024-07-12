@@ -162,6 +162,8 @@ induces an exception at the end so you can do some post mortem debugging.
 
 -finishWithFullCollect: Do collections until all allocated finalizable objects have been finalized
 
+-gcnotify: Do entire run under GC.RegisterForFullGCNotification
+
 The default for these args are specified in "Default parameters".
 
 ---
@@ -1260,13 +1262,15 @@ class Args
     public readonly uint threadCount;
     public readonly PerThreadArgs perThreadArgs;
     public readonly bool finishWithFullCollect;
+    public readonly bool gcNotify;
     public readonly bool endException;
 
-    public Args(uint threadCount, in PerThreadArgs perThreadArgs, bool finishWithFullCollect, bool endException)
+    public Args(uint threadCount, in PerThreadArgs perThreadArgs, bool finishWithFullCollect, bool gcNotify, bool endException)
     {
         this.threadCount = threadCount;
         this.perThreadArgs = perThreadArgs;
         this.finishWithFullCollect = finishWithFullCollect;
+        this.gcNotify = gcNotify;
         this.endException = endException;
     }
 
@@ -1342,6 +1346,7 @@ class ArgsParser
         uint threadCount = 1;
         uint compute = 0;
         bool finishWithFullCollect = false;
+        bool gcNotify = false;
         text.SkipBlankLines();
         while (true)
         {
@@ -1365,6 +1370,7 @@ class ArgsParser
                         printEveryNthIter: printEveryNthIter,
                         phases: phases),
                     finishWithFullCollect: finishWithFullCollect,
+                    gcNotify: gcNotify,
                     endException: false);
             }
             CharSpan word = text.TakeWord();
@@ -1388,6 +1394,10 @@ class ArgsParser
             else if (word == "finishWithFullCollect")
             {
                 finishWithFullCollect = true;
+            }
+            else if (word == "gcNotify")
+            {
+                gcNotify = true;
             }
             else
             {
@@ -1667,6 +1677,7 @@ class ArgsParser
         bool verifyLiveSize = false;
         uint printEveryNthIter = 0;
         bool finishWithFullCollect = false;
+        bool gcNotify = false;
         uint compute = 0;
         bool endException = false;
 
@@ -1684,6 +1695,9 @@ class ArgsParser
                     break;
                 case "-finishWithFullCollect":
                     finishWithFullCollect = true;
+                    break;
+                case "-gcNotify":
+                    gcNotify = true;
                     break;
                 case "-endException":
                 case "-ee":
@@ -1947,6 +1961,7 @@ class ArgsParser
             threadCount: threadCount,
             perThreadArgs: new PerThreadArgs(verifyLiveSize: verifyLiveSize, printEveryNthIter: printEveryNthIter, phases: new Phase[] { onlyPhase }),
             finishWithFullCollect: finishWithFullCollect,
+            gcNotify: gcNotify,
             endException: endException);
     }
 }
@@ -2737,6 +2752,13 @@ class MemoryAlloc
         {
             Args args;
             args = ArgsParser.Parse(argsStrs);
+
+            if (args.gcNotify)
+            {
+                // For now, we just want to the notification mode enabled, so the values don't matter.
+
+                GC.RegisterForFullGCNotification(maxGenerationThreshold: 50, largeObjectHeapThreshold: 50);
+            }
 
             TestResult testResult = MainInner(args);
 
