@@ -587,6 +587,7 @@ public static class Metrics
 
         public static Metric<TraceGC> HeapCount = new(gc => gc.HeapCount, "Heap count", "#");
 
+/*
         // HeapCountSample
         public static Metric<TraceGC> HcsElapsedTimeBetweenGCs = new(gc => gc.HeapCountSample.ElapsedTimeBetweenGCsMSec, "HCSampleElapsed", "ms");
         public static Metric<TraceGC> HcsGCIndex = new(gc => gc.HeapCountSample.GCIndex, "HCSampleGCIndex", "#");
@@ -603,6 +604,7 @@ public static class Metrics
         public static Metric<TraceGC> HctSpaceCostUp = new(gc => gc.HeapCountTuning?.SpaceCostPercentIncreasePerStepUp, "Space cost (up)TCP", "%");
         public static Metric<TraceGC> HctTPCostDown = new(gc => gc.HeapCountTuning?.ThroughputCostPercentIncreasePerStepDown, "TP cost (down)", "%");
         public static Metric<TraceGC> HctTPCostUp = new(gc => gc.HeapCountTuning?.ThroughputCostPercentReductionPerStepUp, "TP cost (up)", "%");
+*/
 
         public static Metric<TraceGC> HeapSizeAfter = new(gc => gc.HeapSizeAfterMB, "Heap size (after)", "MB");
         public static Metric<TraceGC> HeapSizeBefore = new(gc => gc.HeapSizeBeforeMB, "Heap size (before)", "MB");
