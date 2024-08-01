@@ -533,6 +533,22 @@ public static class Metrics
             );
     }
 
+    public static Metric<TSource> ToSec<TSource>(Metric<TSource> m)
+    {
+        double conversion = m.Unit switch
+        {
+            "s" => 1,
+            "ms" => 0.001,
+            _ => throw new Exception("Not convertible to seconds")
+        };
+
+        return new(extract: source => conversion * m.DoExtract(source),
+            title: m.Title,
+            unit: "s"
+            // Cap/offset handled by original metric
+            );
+    }
+
     public static class X
     {
         public static BaseMetric<(string, TraceGC), XValue> GCIndex { get; } = new(pair => new XValue(pair.Item2.Number), "GC Index");
@@ -700,7 +716,12 @@ public static class Metrics
         public static Metric<TraceGC> ObjectSpaceHandles = new(gc => gc.PerHeapMarkTimes.Values.Select(mi => mi.MarkPromoted[(int) MarkRootType.MarkHandles]).Sum(), "Obj space (handles)", "bytes");
         public static Metric<TraceGC> ObjectSpaceCards = new(gc => gc.PerHeapMarkTimes.Values.Select(mi => mi.MarkPromoted[(int) MarkRootType.MarkOlder]).Sum(), "Obj space (cards)", "bytes");
         public static Metric<TraceGC> Suspend = new(gc => gc.SuspendDurationMSec, "Suspend", "ms");
-        public static Metric<TraceGC> UserAllocated = new(gc => gc.UserAllocated.Sum(), "UserAllocated", "bytes");
+        public static Metric<TraceGC> UserAllocated0 = new(gc => gc.UserAllocated[(int) Gens.Gen0], "UserAllocated-gen0", "bytes");
+        public static Metric<TraceGC> UserAllocated1 = new(gc => gc.UserAllocated[(int) Gens.GenLargeObj], "UserAllocated-loh", "bytes");
+        public static Metric<TraceGC> UserAllocated2 = new(gc => gc.UserAllocated[(int) Gens.GenPinObj], "UserAllocated-poh", "bytes");
+
+        public static Metric<TraceGC> BGC1stA = new(gc => gc.BGC1stNonCondStopFromStartMSec, "BGC1stA", "ms");
+        public static Metric<TraceGC> BGC1stB = new(gc => gc.BGC1stNonCondStopFromBGCStartMSec, "BGC1stB", "ms");
     }
 
     public static class I
