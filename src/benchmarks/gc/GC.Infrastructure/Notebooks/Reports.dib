@@ -633,6 +633,9 @@ public static class Metrics
         public static Metric<TraceGC> ObjectSpaceCards = new(gc => gc.PerHeapMarkTimes.Values.Select(mi => mi.MarkPromoted[(int) MarkRootType.MarkOlder]).Sum(), "Obj space (cards)", "bytes");
         public static Metric<TraceGC> Suspend = new(gc => gc.SuspendDurationMSec, "Suspend", "ms");
         public static Metric<TraceGC> UserAllocated = new(gc => gc.UserAllocated.Sum(), "UserAllocated", "bytes");
+
+        public static Metric<TraceGC> BGC1stA = new(gc => gc.BGC1stNonCondStopFromStartMSec, "BGC1stA", "ms");
+        public static Metric<TraceGC> BGC1stB = new(gc => gc.BGC1stNonCondStopFromBGCStartMSec, "BGC1stB", "ms");
     }
 
     public static class I
