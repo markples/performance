@@ -484,6 +484,11 @@ public class Metric<TSource> : BaseMetric<TSource, double?>
         }
     }
 
+    public static Metric<TSource> Promote<TOldSource>(Metric<TOldSource> metric, Func<TOldSource, bool> dataFilter, Func<TSource, IEnumerable<TOldSource>> oldExtract, Aggregation aggregation)
+        => new(extract: source => aggregation.Func(oldExtract(source).Where(dataFilter).Select(metric.ExtractFunc).Where(NotNull).Select(value => value.Value)),
+            title: $"{aggregation.Title} of {metric.Title}",
+            unit: aggregation.UnitOverride ?? metric.Unit);
+
     public static Metric<TSource> Promote<TOldSource>(Metric<TOldSource> metric, Func<TSource, IEnumerable<TOldSource>> oldExtract, Aggregation aggregation)
         => new(extract: source => aggregation.Func(oldExtract(source).Select(metric.ExtractFunc).Where(NotNull).Select(value => value.Value)),
             title: $"{aggregation.Title} of {metric.Title}",
@@ -508,6 +513,8 @@ public static class Metrics
 {
     public static Metric<IterationData> Promote(Metric<TraceGC> metric, Aggregation aggregation)
         => Metric<IterationData>.Promote(metric, iterationData => iterationData.GCProcessData.GCs, aggregation);
+    public static Metric<IterationData> Promote(Metric<TraceGC> metric, Func<TraceGC, bool> dataFilter, Aggregation aggregation)
+        => Metric<IterationData>.Promote(metric, dataFilter, iterationData => iterationData.GCProcessData.GCs, aggregation);
     public static Metric<BenchmarkData> Promote(Metric<IterationData> metric, Aggregation aggregation)
         => Metric<BenchmarkData>.Promote(metric, benchmarkData => benchmarkData.Iterations, aggregation);
     public static Metric<ConfigData> Promote(Metric<BenchmarkData> metric, Aggregation aggregation)
@@ -895,6 +902,7 @@ class BenchmarksChartType : ChartType<BenchmarkData>
         Filter benchmarkFilter, IntFilter iterationFilter, ConfigIterationFilter configIterationFilter, Func<BenchmarkData, bool> dataFilter)
         => info.ConfigData.Benchmarks
             .Where(benchmark => benchmarkFilter.Include(benchmark.Key)
+                && dataFilter(benchmark.Value)
                 && benchmark.Value.Iterations.WithIndex()
                     .Any(pair => (pair.Item1 != null)
                         && iterationFilter.Include(pair.Item2)
@@ -950,7 +958,7 @@ class IterationsChartType : ChartType<IterationData>
             .Where(benchmark => benchmarkFilter.Include(benchmark.Key))
             .Where(benchmark => info.Iteration < benchmark.Value.Iterations.Count)
             .Select(benchmark => KeyValuePair.Create(benchmark.Key, benchmark.Value.Iterations[info.Iteration.Value]))
-            .Where(kvp => kvp.Value != null);
+            .Where(kvp => (kvp.Value != null) && dataFilter(kvp.Value));
     }
 }
 
