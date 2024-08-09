@@ -484,6 +484,11 @@ public class Metric<TSource> : BaseMetric<TSource, double?>
         }
     }
 
+    public static Metric<TSource> Promote<TOldSource>(Metric<TOldSource> metric, Func<TOldSource, bool> dataFilter, Func<TSource, IEnumerable<TOldSource>> oldExtract, Aggregation aggregation)
+        => new(extract: source => aggregation.Func(oldExtract(source).Where(dataFilter).Select(metric.ExtractFunc).Where(NotNull).Select(value => value.Value)),
+            title: $"{aggregation.Title} of {metric.Title}",
+            unit: aggregation.UnitOverride ?? metric.Unit);
+
     public static Metric<TSource> Promote<TOldSource>(Metric<TOldSource> metric, Func<TSource, IEnumerable<TOldSource>> oldExtract, Aggregation aggregation)
         => new(extract: source => aggregation.Func(oldExtract(source).Select(metric.ExtractFunc).Where(NotNull).Select(value => value.Value)),
             title: $"{aggregation.Title} of {metric.Title}",
@@ -508,6 +513,8 @@ public static class Metrics
 {
     public static Metric<IterationData> Promote(Metric<TraceGC> metric, Aggregation aggregation)
         => Metric<IterationData>.Promote(metric, iterationData => iterationData.GCProcessData.GCs, aggregation);
+    public static Metric<IterationData> Promote(Metric<TraceGC> metric, Func<TraceGC, bool> dataFilter, Aggregation aggregation)
+        => Metric<IterationData>.Promote(metric, dataFilter, iterationData => iterationData.GCProcessData.GCs, aggregation);
     public static Metric<BenchmarkData> Promote(Metric<IterationData> metric, Aggregation aggregation)
         => Metric<BenchmarkData>.Promote(metric, benchmarkData => benchmarkData.Iterations, aggregation);
     public static Metric<ConfigData> Promote(Metric<BenchmarkData> metric, Aggregation aggregation)
@@ -716,12 +723,10 @@ public static class Metrics
         public static Metric<TraceGC> ObjectSpaceHandles = new(gc => gc.PerHeapMarkTimes.Values.Select(mi => mi.MarkPromoted[(int) MarkRootType.MarkHandles]).Sum(), "Obj space (handles)", "bytes");
         public static Metric<TraceGC> ObjectSpaceCards = new(gc => gc.PerHeapMarkTimes.Values.Select(mi => mi.MarkPromoted[(int) MarkRootType.MarkOlder]).Sum(), "Obj space (cards)", "bytes");
         public static Metric<TraceGC> Suspend = new(gc => gc.SuspendDurationMSec, "Suspend", "ms");
-        public static Metric<TraceGC> UserAllocated0 = new(gc => gc.UserAllocated[(int) Gens.Gen0], "UserAllocated-gen0", "bytes");
-        public static Metric<TraceGC> UserAllocated1 = new(gc => gc.UserAllocated[(int) Gens.GenLargeObj], "UserAllocated-loh", "bytes");
-        public static Metric<TraceGC> UserAllocated2 = new(gc => gc.UserAllocated[(int) Gens.GenPinObj], "UserAllocated-poh", "bytes");
-
-        public static Metric<TraceGC> BGC1stA = new(gc => gc.BGC1stNonCondStopFromStartMSec, "BGC1stA", "ms");
-        public static Metric<TraceGC> BGC1stB = new(gc => gc.BGC1stNonCondStopFromBGCStartMSec, "BGC1stB", "ms");
+        public static Metric<TraceGC> UserAllocated = new(gc => gc.UserAllocated.Sum(), "UserAllocated", "bytes");
+        public static Metric<TraceGC> UserAllocatedGen0 = new(gc => gc.UserAllocated[(int) Gens.Gen0], "UserAllocated Gen0", "MB");
+        public static Metric<TraceGC> UserAllocatedGenLarge = new(gc => gc.UserAllocated[(int) Gens.GenLargeObj], "UserAllocated GenLarge", "MB");
+        //public static Metric<TraceGC> UserAllocatedGenPin = new(gc => gc.UserAllocated[(int) Gens.GenPinObj], "UserAllocated GenPin", "MB"); // currently always zero
     }
 
     public static class I
@@ -924,6 +929,7 @@ class BenchmarksChartType : ChartType<BenchmarkData>
         Filter benchmarkFilter, IntFilter iterationFilter, ConfigIterationFilter configIterationFilter, Func<BenchmarkData, bool> dataFilter)
         => info.ConfigData.Benchmarks
             .Where(benchmark => benchmarkFilter.Include(benchmark.Key)
+                && dataFilter(benchmark.Value)
                 && benchmark.Value.Iterations.WithIndex()
                     .Any(pair => (pair.Item1 != null)
                         && iterationFilter.Include(pair.Item2)
@@ -966,7 +972,7 @@ class IterationsChartType : ChartType<IterationData>
             .Where(benchmark => benchmarkFilter.Include(benchmark.Key))
             .Where(benchmark => info.Iteration < benchmark.Value.Iterations.Count)
             .Select(benchmark => KeyValuePair.Create(benchmark.Key, benchmark.Value.Iterations[info.Iteration.Value]))
-            .Where(kvp => kvp.Value != null);
+            .Where(kvp => (kvp.Value != null) && dataFilter(kvp.Value));
     }
 }
 
