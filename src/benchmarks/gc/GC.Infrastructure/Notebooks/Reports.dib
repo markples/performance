@@ -727,6 +727,9 @@ public static class Metrics
         public static Metric<TraceGC> UserAllocatedGen0 = new(gc => gc.UserAllocated[(int) Gens.Gen0], "UserAllocated Gen0", "MB");
         public static Metric<TraceGC> UserAllocatedGenLarge = new(gc => gc.UserAllocated[(int) Gens.GenLargeObj], "UserAllocated GenLarge", "MB");
         //public static Metric<TraceGC> UserAllocatedGenPin = new(gc => gc.UserAllocated[(int) Gens.GenPinObj], "UserAllocated GenPin", "MB"); // currently always zero
+
+        public static Metric<TraceGC> BGC1stA = new(gc => gc.BGC1stNonCondStopFromStartMSec, "BGC1stA", "ms");
+        public static Metric<TraceGC> BGC1stB = new(gc => gc.BGC1stNonCondStopFromBGCStartMSec, "BGC1stB", "ms");
     }
 
     public static class I
