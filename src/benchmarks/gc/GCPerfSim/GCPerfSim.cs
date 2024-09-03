@@ -57,10 +57,10 @@ POH alloc ratio (this controls the bytes we allocate on POH out of all allocatio
 It's in in per thousands (not percents! even though in the output it says %). So if it's 5, that means 
 5‰ of the allocations will be on POH.
 
--totalLiveGB/-tlgb: totalLiveBytesGB
+-totalLiveGB/-tlgb: totalLiveBytes
 this is the total live data size in GB
 
--totalAllocGB/-tagb: totalAllocBytesGB
+-totalAllocGB/-tagb: totalAllocBytes
 this is the total allocated size in GB, instead of accepting an arg like # of iterations where you don't really know what 
 an iteration does, we use the allocated bytes to indicate how much work the threads do.
 
@@ -74,6 +74,12 @@ get promoted to gen 2).
 
 -requestLiveMB/-rlmb: requestLiveBytes
 how much memory to keep live during a request.
+
+-requestGCGen/-rgc: requestGCGeneration
+if non-zero, generation to do a GC on at the end of a request
+
+-requestNoGCMB/-rnomb: requestNoGCBytes
+if non-zero, then each request is wrapped in a NoGCRegion of this size
 
 -reqSohSurvInterval/-rsohsi:
 meaning every Nth SOH object allocated during a request survives
@@ -222,6 +228,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Reflection;
+using static System.Net.Mime.MediaTypeNames;
 
 #if STATISTICS
 class Statistics
@@ -984,6 +991,8 @@ readonly struct Phase
     public readonly ulong totalAllocBytes;
     public readonly ulong requestLiveBytes;
     public readonly ulong requestAllocBytes;
+    public readonly uint requestGCGeneration;
+    public readonly ulong requestNoGCBytes;
     public readonly double totalMinutesToRun;
     public readonly BucketSpec[] buckets;
     public readonly uint threadCount;
@@ -992,13 +1001,13 @@ readonly struct Phase
     public Phase(
         TestKind testKind,
         ulong totalLiveBytes, ulong totalAllocBytes, double totalMinutesToRun,
-        ulong requestLiveBytes, ulong requestAllocBytes,
+        ulong requestLiveBytes, ulong requestAllocBytes, uint requestGCGeneration, ulong requestNoGCBytes,
         BucketSpec[] buckets,
         ItemType allocType,
         uint threadCount,
         uint compute)
     {
-        Util.AlwaysAssert(totalAllocBytes != 0); // Must be set
+        Util.AlwaysAssert((totalAllocBytes != 0) || (totalMinutesToRun != 0)); // Must be set
         Util.AlwaysAssert(buckets.Length != 0);
 
         this.testKind = testKind;
@@ -1007,6 +1016,8 @@ readonly struct Phase
         this.totalMinutesToRun = totalMinutesToRun;
         this.requestLiveBytes = requestLiveBytes;
         this.requestAllocBytes = requestAllocBytes;
+        this.requestGCGeneration = requestGCGeneration;
+        this.requestNoGCBytes = requestNoGCBytes;
         this.buckets = buckets;
         this.allocType = allocType;
         this.threadCount = threadCount;
@@ -1015,7 +1026,7 @@ readonly struct Phase
 
     public void Validate()
     {
-        Util.AlwaysAssert(totalAllocBytes != 0); // Must be set
+        Util.AlwaysAssert((totalAllocBytes != 0) || (totalMinutesToRun != 0)); // Must be set
     }
 
     public bool print => false;
@@ -1430,6 +1441,8 @@ class ArgsParser
         ulong? totalAllocBytes = null;
         ulong requestLiveBytes = 0;
         ulong requestAllocBytes = 0;
+        uint requestGCGeneration = 0;
+        ulong requestNoGCBytes = 0;
         double totalMinutesToRun = 0;
         ItemType allocType = ItemType.ReferenceItem;
 
@@ -1451,6 +1464,8 @@ class ArgsParser
                     totalAllocBytes: allocPerThread,
                     requestLiveBytes: requestLiveBytes,
                     requestAllocBytes: requestAllocBytes,
+                    requestGCGeneration: requestGCGeneration,
+                    requestNoGCBytes: requestNoGCBytes,
                     totalMinutesToRun: totalMinutesToRun,
                     buckets: buckets,
                     allocType: allocType,
@@ -1486,10 +1501,20 @@ class ArgsParser
                     totalAllocBytes = Util.MBToBytes(text.TakeDouble());
                     break;
                 case "requestAllocMB":
+                case "ramb":
                     requestAllocBytes = Util.MBToBytes(text.TakeDouble());
                     break;
                 case "requestLiveMB":
+                case "rlmb":
                     requestLiveBytes = Util.MBToBytes(text.TakeDouble());
+                    break;
+                case "requestGCGen":
+                case "rgc":
+                    requestGCGeneration = text.TakeUInt();
+                    break;
+                case "requestNoGCMB":
+                case "rnomb":
+                    requestNoGCBytes = Util.MBToBytes(text.TakeDouble());
                     break;
                 case "compute":
                     compute = text.TakeUInt();
@@ -1683,6 +1708,8 @@ class ArgsParser
 
         ulong requestAllocBytes = 0;
         ulong requestLiveBytes = 0;
+        uint requestGCGeneration = 0;
+        ulong requestNoGCBytes = 0;
         uint sizeDist = 0;
 
         for (uint i = 0; i < args.Length; ++i)
@@ -1739,6 +1766,14 @@ class ArgsParser
                 case "-requestLiveMB":
                 case "-rlmb":
                     requestLiveBytes = Util.MBToBytes(ParseDouble(args[++i]));
+                    break;
+                case "-requestGCGen":
+                case "-rgc":
+                    requestGCGeneration = ParseUInt32(args[++i]);
+                    break;
+                case "-requestNoGCMB":
+                case "-rnomb":
+                    requestNoGCBytes = Util.MBToBytes(ParseDouble(args[++i]));
                     break;
                 case "-totalMins":
                 case "-tm":
@@ -1959,6 +1994,8 @@ class ArgsParser
             totalAllocBytes: allocPerThread,
             requestAllocBytes: requestAllocBytes,
             requestLiveBytes: requestLiveBytes,
+            requestGCGeneration: requestGCGeneration,
+            requestNoGCBytes: requestNoGCBytes,
             totalMinutesToRun: totalMinutesToRun,
             buckets: buckets,
             allocType: allocType,
@@ -2417,18 +2454,15 @@ class MemoryAlloc
                 }
             }
 
-            if (totalAllocBytesLeft <= 0)
+            if ((curPhase.totalAllocBytes != 0) && (totalAllocBytesLeft <= 0))
             {
                 if (!GoToNextPhase()) break;
             }
 
             if (requestAllocBytesLeft <= 0)
             {
-                reqArr.FreeAll();
-                ulong numReqElements = curPhase.requestLiveBytes / bucketChooser.AverageObjectSize();
-                reqArr = new OldArr(numReqElements);
-                reqArr.NonEmptyLength = 0;
-                requestAllocBytesLeft = (long)curPhase.requestAllocBytes;
+                FinishRequest();
+                StartRequest();
             }
 
             MakeObjectAndMaybeSurvive(); // modifies totalAllocBytesLeft && requestAllocBytesLeft
@@ -2448,15 +2482,48 @@ class MemoryAlloc
         Finish();
     }
 
+    void StartRequest()
+    {
+        if (curPhase.requestNoGCBytes != 0)
+        {
+            if (!GC.TryStartNoGCRegion((long)curPhase.requestNoGCBytes))
+            {
+                throw new Exception("couldn't enter NoGC region");
+            }
+        }
+
+        ulong numReqElements = curPhase.requestLiveBytes / bucketChooser.AverageObjectSize();
+        reqArr = new OldArr(numReqElements);
+        // we don't want to fill the request right away
+        reqArr.NonEmptyLength = 0;
+        requestAllocBytesLeft = (long)curPhase.requestAllocBytes;
+    }
+
+    void FinishRequest()
+    {
+        if (reqArr.items != null) reqArr.FreeAll();
+
+        if (curPhase.requestNoGCBytes != 0)
+        {
+            GC.EndNoGCRegion();
+        }
+
+        if (curPhase.requestGCGeneration != 0)
+        {
+            GC.Collect((int) curPhase.requestGCGeneration, GCCollectionMode.Forced);
+        }
+    }
+
     void Finish()
     {
         oldArr.FreeAll();
-        reqArr.FreeAll();
     }
 
     // Returns false if no next phase
     bool GoToNextPhase()
     {
+        FinishRequest();
+
         curPhaseIndex++;
         if (curPhaseIndex < args.phases.Length)
         {
@@ -2474,11 +2541,7 @@ class MemoryAlloc
                 oldArr.Initialize(i, item);
             }
 
-            ulong numReqElements = curPhase.requestLiveBytes / bucketChooser.AverageObjectSize();
-            reqArr = new OldArr(numReqElements);
-            // we don't want to fill the request right away
-            reqArr.NonEmptyLength = 0;
-            requestAllocBytesLeft = (long)curPhase.requestAllocBytes;
+            StartRequest();
 
             if (curPhase.totalLiveBytes == 0)
                 Util.AlwaysAssert(oldArr.TotalLiveBytes < 100);
